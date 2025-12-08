@@ -8,8 +8,6 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use facet::Facet;
-use facet_pretty::FacetPretty;
-use serde::Deserialize;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::json::Json;
@@ -38,6 +36,11 @@ async fn main() -> Result<(), std::io::Error> {
             .expect("failed to connect to neo4j instance"),
     };
 
+    // Antes de iniciar ejecutamos todos los queries de constraint/schema/etc
+    neo4j::Migrations::run(&ctx.neo4j)
+        .await
+        .expect("successful migrations");
+
     let auth = Router::new().route("/signup", axum::routing::post(register_user));
 
     let router = Router::new()
@@ -58,7 +61,7 @@ async fn main() -> Result<(), std::io::Error> {
     axum::serve(listener, router).await
 }
 
-#[derive(Facet, Debug)]
+#[derive(Facet, Debug, Clone, Copy)]
 struct UserReq<'inp> {
     mail: &'inp str,
     #[facet(default)]
@@ -70,82 +73,45 @@ struct UserReq<'inp> {
     password2: &'inp str,
 }
 
-#[derive(Deserialize, Debug)]
-struct User<'inp> {
-    mail: &'inp str,
-    first_name: Option<&'inp str>,
-    last_name: Option<&'inp str>,
-    username: &'inp str,
-}
-
-async fn register_user(State(ctx): State<Ctx>, bytes: Bytes) -> Result<(), Response> {
-    let json @ Json(
-        user @ UserReq {
-            mail,
-            first_name,
-            last_name,
-            username,
-            password,
-            password2,
-        },
-    ) = &Json::from_bytes(&bytes).map_err(|err| err.into_response())?;
+async fn register_user(State(ctx): State<Ctx>, bytes: Bytes) -> Result<http::StatusCode, Response> {
+    let json @ Json(user): Json<UserReq> =
+        Json::from_bytes(&bytes).map_err(|err| err.into_response())?;
 
     if json.is_all_str_set().not() {
         Err((http::StatusCode::BAD_REQUEST).into_response())?;
     }
 
-    tracing::info!(
-        "{}",
-        user.pretty_with(
-            facet_pretty::PrettyPrinter::new()
-                .with_colors(false)
-                .with_indent_size(4)
-        )
-    );
-
-    if password.trim() != password2.trim() {
+    if user.password.trim() != user.password2.trim() {
         Err(http::StatusCode::BAD_REQUEST.into_response())?
     }
 
-    let hash = password_auth::generate_hash(password);
-
-    let res = ctx
-        .neo4j
-        .execute(
-            neo4rs::Query::new(
-                "CREATE (u:User { username: $username, mail: $mail, password: $password }) RETURN u"
-                    .to_string(),
-            )
-            .param("username", *username)
-            .param("mail", *mail)
-            .param("password", hash),
+    ctx.neo4j
+        .run(
+            neo4rs::Query::new(String::from(
+                r#"CREATE (u:User {
+                    username: $username,
+                    mail: $mail,
+                    password: $password,
+                    first_name: $first_name,
+                    last_name: $last_name
+                })"#,
+            ))
+            .param("username", user.username)
+            .param("mail", user.mail)
+            .param("password", password_auth::generate_hash(user.password))
+            .param("first_name", user.first_name)
+            .param("last_name", user.last_name),
         )
-        .await;
-
-    let res = res
+        .await
         .map_err(neo4j::Error::from)
         .map_err(http::StatusCode::from)
-        .map_err(|res| res.into_response())?
-        .next()
-        .await;
+        .map_err(|res| res.into_response())?;
 
-    tracing::trace!("{:?}", res);
-
-    let row = res
-        .map_err(neo4j::Error::from)
-        .map_err(http::StatusCode::from)
-        .map_err(|res| res.into_response())?
-        .unwrap();
-
-    let user = row.to::<User>();
-
-    tracing::trace!("{:?}", user);
-
-    Ok(())
+    Ok(http::StatusCode::CREATED)
 }
 
 async fn log(req: Request, next: middleware::Next) -> Response {
-    tracing::debug!("{method} {uri}", method = req.method(), uri = req.uri());
+    tracing::trace!("{method} {uri}", method = req.method(), uri = req.uri());
     next.run(req).await
 }
 

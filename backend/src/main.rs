@@ -78,7 +78,15 @@ async fn register_user(State(ctx): State<Ctx>, bytes: Bytes) -> Result<http::Sta
         Json::from_bytes(&bytes).map_err(|err| err.into_response())?;
 
     if json.is_all_str_set().not() {
-        Err((http::StatusCode::BAD_REQUEST).into_response())?;
+        Err((
+            http::StatusCode::BAD_REQUEST,
+            http::HeaderMap::from_iter([(
+                http::header::CONTENT_TYPE,
+                http::HeaderValue::from_static("application/json"),
+            )]),
+            facet_json::to_string(&json.collect_missing()),
+        )
+            .into_response())?;
     }
 
     if user.password.trim() != user.password2.trim() {

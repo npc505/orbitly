@@ -1,7 +1,7 @@
 use std::ops::Not;
 
 use axum::{http::StatusCode, response::IntoResponse};
-use facet::ScalarType;
+use facet::{Facet, ScalarType};
 use facet_reflect::{HasFields, Peek};
 
 pub struct Json<T>(pub T);
@@ -15,22 +15,37 @@ impl IntoResponse for JsonError {
     }
 }
 
+#[derive(Facet)]
+pub struct MissingFields {
+    missing_fields: Vec<&'static str>,
+}
+
 impl<'r, T: facet::Facet<'r>> Json<T> {
-    pub fn is_all_str_set(&'r self) -> bool {
+    pub fn iter_all_str_not_set(&'r self) -> impl Iterator<Item = &'static str> {
         let peek = Peek::new(&self.0);
         let st = peek.into_struct().expect("it is a struct");
 
         st.fields()
-            .filter_map(|(field, peek)| {
+            .filter(|(field, _)| {
                 tracing::trace!("{}", field.shape().ty);
                 let shape = field.shape();
 
                 shape
                     .scalar_type()
                     .is_some_and(|t| matches!(t, ScalarType::Str | ScalarType::String))
-                    .then_some(peek)
             })
-            .all(|peek| peek.as_str().is_some_and(|value| value.is_empty().not()))
+            .filter(|(_, peek)| peek.as_str().is_some_and(|value| value.is_empty()))
+            .map(|(field, _)| field.name)
+    }
+
+    pub fn collect_missing(&'r self) -> MissingFields {
+        MissingFields {
+            missing_fields: self.iter_all_str_not_set().collect(),
+        }
+    }
+
+    pub fn is_all_str_set(&'r self) -> bool {
+        self.iter_all_str_not_set().next().is_none()
     }
 }
 

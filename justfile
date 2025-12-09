@@ -1,6 +1,12 @@
 gen-users:
     uv run python ./data/processed/users.py ./data/raw/users.csv
 
+start-neo4j:
+    docker-compose up
+
+rm-neo4j:
+    docker-compose down -v
+
 backend-watch:
     cd ./backend && \
     watchexec -r -w src -w Cargo.toml \

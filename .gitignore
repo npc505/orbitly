@@ -12,4 +12,3 @@ wheels/
 
 # Added by cargo
 target
-data/raw/users.csv

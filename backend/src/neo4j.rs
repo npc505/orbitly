@@ -3,7 +3,7 @@ use std::ops::Not;
 use axum::http::StatusCode;
 
 #[derive(rust_embed::Embed)]
-#[folder = "../neo4j/chypher"]
+#[folder = "../neo4j/cypher"]
 #[include = "*.cypher"]
 pub struct Migrations;
 
@@ -80,6 +80,7 @@ impl From<Error> for StatusCode {
 
 impl From<neo4rs::Error> for Error {
     fn from(err: neo4rs::Error) -> Self {
+        tracing::error!("neo4j error {err:?}");
         match err {
             neo4rs::Error::Neo4j(ref neo4j_error) => {
                 if let neo4rs::Neo4jErrorKind::Client(neo4rs::Neo4jClientErrorKind::Other) =

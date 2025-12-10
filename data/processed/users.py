@@ -10,7 +10,7 @@ import sys
 
 fake = Faker()
 
-NUM_USERS = 200
+NUM_USERS = 300
 target_path = sys.argv[1]
 
 headers = [

@@ -17,13 +17,18 @@ clap = { version = "4.5.53", features = ["derive","env"]}
 
 tracing = "0.1.43"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+sled = "1.0.0-alpha.124"
+axum-auth = "0.8.1"
 
-facet = { git = "https://github.com/facet-rs/facet/", rev = "24ecc600106adcb2e93dd2c5f5ee318d6bd1d6ac" }
+facet = { git = "https://github.com/facet-rs/facet/", rev = "24ecc600106adcb2e93dd2c5f5ee318d6bd1d6ac", features = ["jiff02"] }
 facet-json = { git = "https://github.com/facet-rs/facet/", rev = "24ecc600106adcb2e93dd2c5f5ee318d6bd1d6ac" }
 facet-pretty = { git = "https://github.com/facet-rs/facet/", rev = "24ecc600106adcb2e93dd2c5f5ee318d6bd1d6ac" }
 facet-reflect = { git = "https://github.com/facet-rs/facet/", rev = "24ecc600106adcb2e93dd2c5f5ee318d6bd1d6ac" }
 
 neo4rs = { git = "https://github.com/neo4j-labs/neo4rs", rev = "7be45a0fc1ca0bb5c3a22fec3e1a7fa28200abd3" }
+jiff = { version = "0.2.16", features = ["serde"] }
+
+rand = "0.10.0-rc.5"
 
 [profile.act]
 inherits = "dev"

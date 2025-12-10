@@ -10,7 +10,7 @@ rm-neo4j:
 backend-watch:
     cd ./backend && \
     watchexec -r -w src -w Cargo.toml \
-        RUST_LOG=trace cargo run --profile act -- \
+        RUST_LOG=trace,sled=warn,facet_json=warn cargo run --profile act -- \
         --port 6232 \
         --address '::' \
         --neo-uri 'bolt://127.0.0.1:7687' \

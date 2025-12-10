@@ -13,7 +13,6 @@ export default function Register() {
   const [descripcion, setDescripcion] = useState("");
   const [error, setError] = useState("");
 
-  // Subir foto (convertida a Base64)
   function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -23,7 +22,6 @@ export default function Register() {
     reader.readAsDataURL(file);
   }
 
-  // Guardar temporalmente
   function handleRegister(e: React.FormEvent) {
     e.preventDefault();
     setError("");

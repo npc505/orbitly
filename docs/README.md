@@ -36,6 +36,9 @@ El grafo está compuesto por:
 (:User)-[:MATCHES]->(:User)
 ```
 
+
+---
+
 ## Configuración y Ejecución
 
 ### Requisitos

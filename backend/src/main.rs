@@ -7,9 +7,9 @@ use axum::{
     http, middleware,
     response::{IntoResponse, Response},
 };
-use tower_http::cors::{CorsLayer, Any};
 use facet::Facet;
 use tokio::sync::Mutex;
+use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{auth::Session, json::Json};
@@ -56,12 +56,29 @@ async fn main() -> Result<(), std::io::Error> {
         .route("/category/search", axum::routing::get(search_category))
         .route("/genre", axum::routing::post(create_genre))
         .route("/genre/search", axum::routing::get(search_genre))
-        .route("/me/interest", axum::routing::get(get_interests).post(like_interest).delete(unlike_interest))
-        .route("/me/match", axum::routing::post(perform_match).delete(unmatch))
+        .route(
+            "/me/interest",
+            axum::routing::get(get_interests)
+                .post(like_interest)
+                .delete(unlike_interest),
+        )
+        .route(
+            "/me/match",
+            axum::routing::post(perform_match).delete(unmatch),
+        )
+        .route("/me/matches", axum::routing::get(get_matches))
         .route("/me/lv2", axum::routing::get(get_lv2_matches))
-        .route("/me/recommendations", axum::routing::get(get_contenido_recomendado))
+        .route(
+            "/me/recommendations",
+            axum::routing::get(get_contenido_recomendado),
+        )
         .route("/me/shortest-path", axum::routing::get(get_shortest_path))
         .route("/me", axum::routing::get(get_me))
+        .route("/other", axum::routing::get(get_other_user))
+        .route("/other/matches", axum::routing::get(get_other_user_matches))
+        .route("/other/interest", axum::routing::get(get_other_user_interests))
+        .route("/other/search", axum::routing::get(search_users))
+        .route("/other/search/strict", axum::routing::get(search_users_strict))
         .route("/comunidades", axum::routing::get(comunidades))
         .route("/pagerank", axum::routing::get(page_rank))
         .layer(middleware::from_fn_with_state(
@@ -70,10 +87,10 @@ async fn main() -> Result<(), std::io::Error> {
         ));
 
     let cors = CorsLayer::new()
-    .allow_origin(Any)
-    .allow_methods(Any)
-    .allow_headers(Any);
-    
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
     let router = Router::new()
         .route("/ready", axum::routing::get(async || "ready"))
         .nest("/auth", auth::router())
@@ -283,9 +300,19 @@ async fn search_impl<'inp>(
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+struct UserMatch {
+    username: String,
+    first_name: Option<String>,
+    last_name: Option<String>,
+    description: Option<String>,
+    avatar: Option<String>,
+    compatibility: f64,
+}
+
 #[derive(serde::Serialize)]
 struct Lv2Response {
-    matches: Vec<String>,
+    matches: Vec<UserMatch>,
 }
 
 #[derive(serde::Serialize)]
@@ -335,7 +362,9 @@ async fn comunidades(
         .map_err(http::StatusCode::from)
         .map_err(|res| res.into_response())?;
 
-    let mut result = ComunidadesResponse { communities: vec![] };
+    let mut result = ComunidadesResponse {
+        communities: vec![],
+    };
 
     while let Some(row) = stream
         .next()
@@ -438,9 +467,12 @@ async fn page_rank(
 #[derive(Facet, serde::Serialize, serde::Deserialize, Debug, Clone)]
 struct Interest {
     name: String,
-    description: String,
+    #[facet(default)]
+    description: Option<String>,
     #[facet(rename = "type")]
-    kind: String,
+    #[facet(default)]
+    #[serde(rename = "type")]
+    kind: Option<String>,
 }
 
 #[derive(Facet, serde::Serialize, Debug, Clone)]
@@ -456,16 +488,31 @@ struct User {
     username: String,
 }
 
-async fn get_me(State(ctx): State<Ctx>, session: Session) -> Result<axum::Json<User>, Response> {
+async fn get_user_info_impl(
+    ctx: &Ctx,
+    current_username: &str,
+    target_username: &str,
+) -> Result<UserMatch, Response> {
     let mut stream = ctx
         .neo4j
         .execute_read(
             neo4rs::Query::new(String::from(
                 r#"
-                   MATCH (user:User{username: $username}) RETURN user   
+                MATCH (u:User{username: $current_username})-[:LIKES]->(i1:Interest),
+                      (other:User{username: $other_username})-[:LIKES]->(i2:Interest)
+                WITH COLLECT(ID(i1)) AS u_likes, COLLECT(ID(i2)) AS other_likes, u, other
+                WITH u, other, gds.similarity.cosine(u_likes, other_likes) AS compatibility
+                RETURN
+                    other.username as username,
+                    other.first_name as first_name,
+                    other.last_name as last_name,
+                    other.description as description,
+                    other.avatar as avatar,
+                    compatibility
                 "#,
             ))
-            .param("username", session.username),
+            .param("current_username", current_username)
+            .param("other_username", target_username),
         )
         .await
         .map_err(neo4j::Error::from)
@@ -479,17 +526,118 @@ async fn get_me(State(ctx): State<Ctx>, session: Session) -> Result<axum::Json<U
         .map_err(http::StatusCode::from)
         .map_err(|res| res.into_response())?;
 
-    let Some(value) = row.map(|value| value.to::<User>().expect("failed")) else {
+    let Some(row) = row else {
         Err(http::StatusCode::NOT_FOUND.into_response())?
     };
 
-    Ok(axum::Json(value))
+    row.to::<UserMatch>().map_err(|err| {
+        tracing::error!("Failed deserializing UserMatch {err}");
+        http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
+    })
 }
 
-async fn get_interests(
+async fn get_user_matches_impl(
+    ctx: &Ctx,
+    current_username: &str,
+    target_username: &str,
+) -> Result<Lv2Response, Response> {
+    let mut stream = ctx
+        .neo4j
+        .execute_read(
+            neo4rs::Query::new(String::from(
+                r#"
+                MATCH (u:User{username: $current_username})-[:LIKES]->(i1:Interest),
+                      (other:User{username: $other_username})-[:MATCHES]->(m:User)-[:LIKES]->(i2:Interest)
+                WITH COLLECT(ID(i1)) AS u_likes, COLLECT(ID(i2)) AS m_likes, u, m
+                WITH u, m, gds.similarity.cosine(u_likes, m_likes) AS compatibility
+                RETURN
+                    m.username as username,
+                    m.first_name as first_name,
+                    m.last_name as last_name,
+                    m.description as description,
+                    m.avatar as avatar,
+                    compatibility
+                "#,
+            ))
+            .param("current_username", current_username)
+            .param("other_username", target_username),
+        )
+        .await
+        .map_err(neo4j::Error::from)
+        .map_err(http::StatusCode::from)
+        .map_err(|res| res.into_response())?;
+
+    let mut result = Lv2Response { matches: vec![] };
+    while let Some(row) = stream
+        .next()
+        .await
+        .map_err(neo4j::Error::from)
+        .map_err(http::StatusCode::from)
+        .map_err(|res| res.into_response())?
+    {
+        let user = row.to::<UserMatch>().map_err(|err| {
+            tracing::error!("Failed deserializing UserMatch {err}");
+            http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        })?;
+        result.matches.push(user);
+    }
+
+    Ok(result)
+}
+
+async fn get_me(State(ctx): State<Ctx>, session: Session) -> Result<axum::Json<UserMatch>, Response> {
+    let user = get_user_info_impl(&ctx, &session.username, &session.username).await?;
+    Ok(axum::Json(user))
+}
+
+#[derive(Facet, Debug, Clone, Copy)]
+struct OtherUserParams<'inp> {
+    username: &'inp str,
+}
+
+async fn get_other_user(
     State(ctx): State<Ctx>,
     session: Session,
-) -> Result<axum::Json<Interests>, Response> {
+    bytes: Bytes,
+) -> Result<axum::Json<UserMatch>, Response> {
+    let bytes = bytes.iter().as_slice();
+    let json @ Json(params): Json<OtherUserParams> =
+        Json::from_bytes(bytes).map_err(|err| err.into_response())?;
+
+    if json.is_all_str_set().not() {
+        Err((http::StatusCode::BAD_REQUEST).into_response())?;
+    }
+
+    let user = get_user_info_impl(&ctx, &session.username, params.username).await?;
+    Ok(axum::Json(user))
+}
+
+async fn get_matches(
+    State(ctx): State<Ctx>,
+    session: Session,
+) -> Result<axum::Json<Lv2Response>, Response> {
+    let result = get_user_matches_impl(&ctx, &session.username, &session.username).await?;
+    Ok(axum::Json(result))
+}
+
+async fn get_other_user_matches(
+    State(ctx): State<Ctx>,
+    session: Session,
+    bytes: Bytes,
+) -> Result<axum::Json<Lv2Response>, Response> {
+    let bytes = bytes.iter().as_slice();
+    let json @ Json(params): Json<OtherUserParams> =
+        Json::from_bytes(bytes).map_err(|err| err.into_response())?;
+
+    if json.is_all_str_set().not() {
+        Err((http::StatusCode::BAD_REQUEST).into_response())?;
+    }
+
+    let result = get_user_matches_impl(&ctx, &session.username, params.username).await?;
+    Ok(axum::Json(result))
+}
+
+async fn get_interests_impl(ctx: &Ctx, username: &str) -> Result<Interests, Response> {
     let mut stream = ctx
         .neo4j
         .execute_read(
@@ -498,7 +646,7 @@ async fn get_interests(
                    MATCH (:User{username: $username})-[:LIKES]->(i:Interest) RETURN i
                 "#,
             ))
-            .param("username", session.username),
+            .param("username", username),
         )
         .await
         .map_err(neo4j::Error::from)
@@ -525,7 +673,118 @@ async fn get_interests(
         }
     }
 
+    Ok(result)
+}
+
+async fn get_interests(
+    State(ctx): State<Ctx>,
+    session: Session,
+) -> Result<axum::Json<Interests>, Response> {
+    let result = get_interests_impl(&ctx, &session.username).await?;
     Ok(axum::Json(result))
+}
+
+async fn get_other_user_interests(
+    State(ctx): State<Ctx>,
+    _session: Session,
+    bytes: Bytes,
+) -> Result<axum::Json<Interests>, Response> {
+    let bytes = bytes.iter().as_slice();
+    let json @ Json(params): Json<OtherUserParams> =
+        Json::from_bytes(bytes).map_err(|err| err.into_response())?;
+
+    if json.is_all_str_set().not() {
+        Err((http::StatusCode::BAD_REQUEST).into_response())?;
+    }
+
+    let result = get_interests_impl(&ctx, params.username).await?;
+    Ok(axum::Json(result))
+}
+
+async fn search_users(
+    State(ctx): State<Ctx>,
+    session: Session,
+    bytes: Bytes,
+) -> Result<axum::Json<Lv2Response>, Response> {
+    let bytes = bytes.iter().as_slice();
+    let json @ Json(search): Json<SearchReq> =
+        Json::from_bytes(bytes).map_err(|err| err.into_response())?;
+
+    if json.is_all_str_set().not() {
+        Err((http::StatusCode::BAD_REQUEST).into_response())?;
+    }
+
+    let mut stream = ctx
+        .neo4j
+        .execute(
+            neo4rs::Query::new(String::from(
+                r#"
+                MATCH (u:User{username: $current_username})-[:LIKES]->(i1:Interest),
+                      (other:User)-[:LIKES]->(i2:Interest)
+                WHERE (toLower(other.username) CONTAINS toLower($term)
+                   OR toLower(other.first_name) CONTAINS toLower($term)
+                   OR toLower(other.last_name) CONTAINS toLower($term))
+                  AND u <> other
+                WITH COLLECT(ID(i1)) AS u_likes, COLLECT(ID(i2)) AS other_likes, u, other
+                WITH u, other, gds.similarity.cosine(u_likes, other_likes) AS compatibility
+                RETURN
+                    other.username as username,
+                    other.first_name as first_name,
+                    other.last_name as last_name,
+                    other.description as description,
+                    other.avatar as avatar,
+                    compatibility
+                ORDER BY compatibility DESC
+                LIMIT 50
+                "#,
+            ))
+            .param("current_username", session.username)
+            .param("term", search.term),
+        )
+        .await
+        .map_err(neo4j::Error::from)
+        .map_err(http::StatusCode::from)
+        .map_err(|res| res.into_response())?;
+
+    let mut result = Lv2Response { matches: vec![] };
+    while let Some(row) = stream
+        .next()
+        .await
+        .map_err(neo4j::Error::from)
+        .map_err(http::StatusCode::from)
+        .map_err(|res| res.into_response())?
+    {
+        let user = row.to::<UserMatch>().map_err(|err| {
+            tracing::error!("Failed deserializing UserMatch {err}");
+            http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        })?;
+        result.matches.push(user);
+    }
+
+    Ok(axum::Json(result))
+}
+
+async fn search_users_strict(
+    State(ctx): State<Ctx>,
+    bytes: Bytes,
+) -> Result<axum::Json<SearchResponse>, Response> {
+    let bytes = bytes.iter().as_slice();
+    let json @ Json(search): Json<SearchReq> =
+        Json::from_bytes(bytes).map_err(|err| err.into_response())?;
+
+    if json.is_all_str_set().not() {
+        Err((http::StatusCode::BAD_REQUEST).into_response())?;
+    }
+
+    search_impl(
+        &ctx,
+        SearchParams {
+            term: search.term,
+            label: "User",
+            cmp_field: "username",
+        },
+    )
+    .await
 }
 
 #[derive(Facet, Debug, Clone, Copy)]
@@ -707,7 +966,9 @@ async fn get_contenido_recomendado(
     {
         let name: String = row.get("name").unwrap_or_default();
         let count: i64 = row.get("user_count").unwrap_or_default();
-        result.recommendations.push(RecommendedContent { name, count });
+        result
+            .recommendations
+            .push(RecommendedContent { name, count });
     }
 
     Ok(axum::Json(result))
@@ -722,9 +983,21 @@ async fn get_lv2_matches(
         .execute_read(
             neo4rs::Query::new(String::from(
                 r#"
-                     MATCH (u:User{username: $username})-[:MATCHES]->(:User)-[:MATCHES]->(lv2:User)
-                     WHERE NOT (u)-[:MATCHES]->(lv2)
-                    RETURN lv2.username as username
+                MATCH (u:User{username: $username})-[:LIKES]->(i1:Interest),
+                      (lv2:User)-[:LIKES]->(i2:Interest)
+                WHERE (u)-[:MATCHES]->(:User)-[:MATCHES]->(lv2)
+                  AND NOT (u)-[:MATCHES]->(lv2)
+                  AND u <> lv2
+                WITH COLLECT(ID(i1)) AS u_likes, COLLECT(ID(i2)) AS lv2_likes, u, lv2
+                WITH u, lv2, gds.similarity.cosine(u_likes, lv2_likes) AS compatibility
+                RETURN
+                    lv2.username as username,
+                    lv2.first_name as first_name,
+                    lv2.last_name as last_name,
+                    lv2.description as description,
+                    lv2.avatar as avatar,
+                    compatibility
+                ORDER BY compatibility DESC
                 "#,
             ))
             .param("username", session.username),
@@ -742,16 +1015,11 @@ async fn get_lv2_matches(
         .map_err(http::StatusCode::from)
         .map_err(|res| res.into_response())?
     {
-        let maybe_interest = row.get("username");
-        match maybe_interest {
-            Ok(row) => {
-                result.matches.push(row);
-            }
-            Err(err) => {
-                tracing::error!("Failed deserializing interest {err}");
-                continue;
-            }
-        }
+        let user = row.to::<UserMatch>().map_err(|err| {
+            tracing::error!("Failed deserializing UserMatch {err}");
+            http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        })?;
+        result.matches.push(user);
     }
 
     Ok(axum::Json(result))
@@ -779,7 +1047,7 @@ async fn perform_match(
         .run(
             neo4rs::Query::new(String::from(
                 r#"
-                    MATCH (u1:User { username: $username2 }), (u2:User { username: $username1 })
+                    MATCH (u1:User { username: $username1 }), (u2:User { username: $username2 })
                     MERGE (u1)-[:MATCHES]->(u2)
             "#,
             ))

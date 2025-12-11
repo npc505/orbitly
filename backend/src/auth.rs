@@ -184,7 +184,7 @@ async fn login_user(State(ctx): State<Ctx>, bytes: Bytes) -> Result<axum::Json<T
                     token: token.clone(),
                     username: user.username.to_string(),
                     created_on: jiff::Timestamp::now(),
-                    duration: jiff::SignedDuration::from_mins(10),
+                    duration: jiff::SignedDuration::from_hours(24 * 60),
                 }
                 .to_bytes(),
             )

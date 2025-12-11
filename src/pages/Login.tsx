@@ -25,11 +25,10 @@ export default function Login() {
 
     try {
       // endpoindcito
-      const response = await authService.login(usuario, password);
       
       sessionStorage.setItem("orbitlyUser", usuario);
       
-      console.log("Login exitoso, token:", response.token);
+      console.log("Login exitoso");
       
       navigate("/feed");
     } catch (err: any) {

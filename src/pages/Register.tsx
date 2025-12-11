@@ -69,7 +69,7 @@ export default function Register() {
 
       <h2 className="text-center text-2xl font-bold">Crear tu cuenta</h2>
       <p className="text-center text-gray-300 text-sm mb-6">
-        Bienvenida a Orbitly
+        Bienvenida(o) a Orbitly
       </p>
 
       {error && <p className="text-red-400 text-center mb-4">{error}</p>}

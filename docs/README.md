@@ -8,10 +8,10 @@ El sistema utiliza un grafo en Neo4j para modelar afinidades, permitiendo encont
 
 El grafo está compuesto por:
 
-- **User** ’ persona que usa la aplicación
-- **Interest** ’ un interés concreto (e.g., "Taylor Swift", "Star Wars", "Marvel Rivals")
-- **Category** ’ categoría general (e.g., música, películas, actividades)
-- **Genre** ’ subgénero o tipo específico dentro de una categoría
+- '**User**' persona que usa la aplicación
+- '**Interest**' un interés concreto (e.g., "Taylor Swift", "Star Wars", "Marvel Rivals")
+- '**Category**' categoría general (e.g., música, películas, actividades)
+- '**Genre**' subgénero o tipo específico dentro de una categoría
 
 ### Relaciones principales:
 
@@ -48,10 +48,10 @@ Rust se eligió por:
 
 **Stack técnico:**
 
-- **Axum**  framework web de alto rendimiento
-- **neo4rs**  driver asíncrono para Neo4j
-- **Tokio**  runtime asíncrono
-- **Serde**  serialización/deserialización JSON
+- **Axum** : framework web de alto rendimiento
+- **neo4rs** : driver asíncrono para Neo4j
+- **Tokio** : runtime asíncrono
+- **Serde** : serialización/deserialización JSON
 
 ### 2. Base de Datos - Neo4j
 
@@ -67,11 +67,11 @@ Neo4j es el núcleo del sistema, permitiendo:
 
 **Algoritmos implementados:**
 
-- **Label Propagation**  detección de comunidades de usuarios
-- **PageRank**  ranking de intereses por importancia
-- **Node Similarity**  cálculo de similitud entre usuarios
-- **Cosine Similarity**  scoring de compatibilidad basado en intereses compartidos
-- **Shortest Path**  distancia entre usuarios en el grafo social
+- **Label Propagation** : detección de comunidades de usuarios
+- **PageRank** : ranking de intereses por importancia
+- **Node Similarity** : cálculo de similitud entre usuarios
+- **Cosine Similarity** : scoring de compatibilidad basado en intereses compartidos
+- **Shortest Path** : distancia entre usuarios en el grafo social
 
 El diseño permite representar jerarquías de intereses y gustos con alto nivel de granularidad y flexibilidad.
 
@@ -104,7 +104,7 @@ Esto evita mezclar niveles semánticos:
 - **Genre** = clasificación interna (ej. "Ciencia ficción")
 - **Interest** = elemento puntual (ej. "Star Wars")
 
-###  Un usuario nunca conecta directo con Category o Genre
+### Un usuario nunca conecta directo con Category o Genre
 
 Siempre lo hace vía **Interest**, lo que:
 
@@ -684,15 +684,15 @@ JWT_SECRET=your_jwt_secret_key
 
 ## Características Principales
 
- **Autenticación segura** con JWT y bcrypt
- **Scoring de compatibilidad** usando cosine similarity
- **Recomendaciones colaborativas** basadas en usuarios similares
- **Detección de comunidades** con Label Propagation
- **Ranking de intereses** con PageRank
- **Búsqueda fuzzy** de usuarios con múltiples estrategias
- **Paginación** en todas las búsquedas
- **Caminos más cortos** entre usuarios en el grafo social
- **Sistema de matches bidireccional**
+**Autenticación segura** con JWT y bcrypt
+**Scoring de compatibilidad** usando cosine similarity
+**Recomendaciones colaborativas** basadas en usuarios similares
+**Detección de comunidades** con Label Propagation
+**Ranking de intereses** con PageRank
+**Búsqueda fuzzy** de usuarios con múltiples estrategias
+**Paginación** en todas las búsquedas
+**Caminos más cortos** entre usuarios en el grafo social
+**Sistema de matches bidireccional**
 
 ---
 

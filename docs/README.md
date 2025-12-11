@@ -4,6 +4,19 @@ Orbitly es una aplicación diseñada para conectar personas a partir de sus gust
 
 El sistema utiliza un grafo en Neo4j para modelar afinidades, permitiendo encontrar coincidencias de forma natural y eficiente.
 
+
+## Estructura del repositorio
+
+El repositorio está compuesto por:
+
+- '**backend**' Todos los archivos generados para mantener el backend
+- '**data**' Los datos utilizados para generar la estructura de datos de la red social
+- '**neo4j**' Las consultas generadas en cypher
+- '**docs**' documentos que describen el proyecto
+- '**frontend**' Archivos generados para mantener el frontend
+
+---
+
 ## Modelo del Grafo
 
 El grafo está compuesto por:
@@ -22,18 +35,6 @@ El grafo está compuesto por:
 (:Interest)-[:HAS_SUBINTEREST]->(:Interest)
 (:User)-[:MATCHES]->(:User)
 ```
-
-## Estructura del repositorio
-
-El repositorio está compuesto por:
-
-- '**backend**' Todos los archivos generados para mantener el backend
-- '**data**' Los datos utilizados para generar la estructura de datos de la red social
-- '**neo4j**' Las consultas generadas en cypher
-- '**docs**' documentos que describen el proyecto
-- '**frontend**' Archivos generados para mantener el frontend
-
----
 
 ## Configuración y Ejecución
 

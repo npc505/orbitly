@@ -44,7 +44,7 @@ with open("../raw/subinterest.csv", "r", encoding="utf-8") as f:
             """
             MATCH (child:Interest {name: $child_name})
             MATCH (parent:Interest {name: $parent_name})
-            CREATE (child)-[:BELONGS_TO]->(parent)
+            CREATE (child)-[:HAS_SUBINTEREST]->(parent)
             """,
             {
                 "child_name": row["child_interest"],

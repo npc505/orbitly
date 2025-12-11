@@ -17,3 +17,10 @@ backend-watch:
         --neo-username 'neo4j' \
         --neo-password '1234567890'
 
+deploy packet binaries=packet:
+    #!/usr/bin/env fish
+    cd backend
+    RUSTFLAGS="-L /usr/lib64" cargo zigbuild --target x86_64-unknown-linux-musl --release -p {{packet}}
+    for binary in (string split ' ' "{{binaries}}")
+        rsync -avz target/x86_64-unknown-linux-musl/release/$binary ubuntu@aol:bin/$binary
+    end

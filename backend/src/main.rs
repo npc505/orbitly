@@ -55,8 +55,8 @@ async fn main() -> Result<(), std::io::Error> {
         .route("/category/search", axum::routing::get(search_category))
         .route("/genre", axum::routing::post(create_genre))
         .route("/genre/search", axum::routing::get(search_genre))
-        .route("/me/interest", axum::routing::get(get_interests))
-        .route("/me/match", axum::routing::post(perform_match))
+        .route("/me/interest", axum::routing::get(get_interests).post(like_interest).delete(unlike_interest))
+        .route("/me/match", axum::routing::post(perform_match).delete(unmatch))
         .route("/me/lv2", axum::routing::get(get_lv2_matches))
         .route("/me/recommendations", axum::routing::get(get_contenido_recomendado))
         .route("/me/shortest-path", axum::routing::get(get_shortest_path))
@@ -488,7 +488,7 @@ async fn get_interests(
         .execute_read(
             neo4rs::Query::new(String::from(
                 r#"
-                   MATCH (:User{username: $username})-[:LIKES]->(i:Interest) RETURN i     
+                   MATCH (:User{username: $username})-[:LIKES]->(i:Interest) RETURN i
                 "#,
             ))
             .param("username", session.username),
@@ -519,6 +519,75 @@ async fn get_interests(
     }
 
     Ok(axum::Json(result))
+}
+
+#[derive(Facet, Debug, Clone, Copy)]
+struct LikeInterestParams<'inp> {
+    name: &'inp str,
+}
+
+async fn like_interest(
+    State(ctx): State<Ctx>,
+    session: Session,
+    bytes: Bytes,
+) -> Result<http::StatusCode, Response> {
+    let bytes = bytes.iter().as_slice();
+    let json @ Json(params): Json<LikeInterestParams> =
+        Json::from_bytes(bytes).map_err(|err| err.into_response())?;
+
+    if json.is_all_str_set().not() {
+        Err((http::StatusCode::BAD_REQUEST).into_response())?;
+    }
+
+    ctx.neo4j
+        .run(
+            neo4rs::Query::new(String::from(
+                r#"
+                MATCH (u:User {username: $username}), (i:Interest {name: $interest_name})
+                MERGE (u)-[:LIKES]->(i)
+                "#,
+            ))
+            .param("username", session.username)
+            .param("interest_name", params.name),
+        )
+        .await
+        .map_err(neo4j::Error::from)
+        .map_err(http::StatusCode::from)
+        .map_err(|res| res.into_response())?;
+
+    Ok(http::StatusCode::CREATED)
+}
+
+async fn unlike_interest(
+    State(ctx): State<Ctx>,
+    session: Session,
+    bytes: Bytes,
+) -> Result<http::StatusCode, Response> {
+    let bytes = bytes.iter().as_slice();
+    let json @ Json(params): Json<LikeInterestParams> =
+        Json::from_bytes(bytes).map_err(|err| err.into_response())?;
+
+    if json.is_all_str_set().not() {
+        Err((http::StatusCode::BAD_REQUEST).into_response())?;
+    }
+
+    ctx.neo4j
+        .run(
+            neo4rs::Query::new(String::from(
+                r#"
+                MATCH (u:User {username: $username})-[r:LIKES]->(i:Interest {name: $interest_name})
+                DELETE r
+                "#,
+            ))
+            .param("username", session.username)
+            .param("interest_name", params.name),
+        )
+        .await
+        .map_err(neo4j::Error::from)
+        .map_err(http::StatusCode::from)
+        .map_err(|res| res.into_response())?;
+
+    Ok(http::StatusCode::NO_CONTENT)
 }
 
 #[derive(Facet, Debug, Clone, Copy)]
@@ -703,8 +772,8 @@ async fn perform_match(
         .run(
             neo4rs::Query::new(String::from(
                 r#"
-                    MATCH (u1:User { username: $username2 }), (u2:User { username: $username1 }) 
-                    CREATE (u1)-[:MATCH]->(u2)
+                    MATCH (u1:User { username: $username2 }), (u2:User { username: $username1 })
+                    MERGE (u1)-[:MATCHES]->(u2)
             "#,
             ))
             .param("username1", session.username)
@@ -716,6 +785,38 @@ async fn perform_match(
         .map_err(|res| res.into_response())?;
 
     Ok(http::StatusCode::CREATED)
+}
+
+async fn unmatch(
+    State(ctx): State<Ctx>,
+    session: Session,
+    bytes: Bytes,
+) -> Result<http::StatusCode, Response> {
+    let bytes = bytes.iter().as_slice();
+    let json @ Json(match_params): Json<MatchParams> =
+        Json::from_bytes(bytes).map_err(|err| err.into_response())?;
+
+    if json.is_all_str_set().not() {
+        Err((http::StatusCode::BAD_REQUEST).into_response())?;
+    }
+
+    ctx.neo4j
+        .run(
+            neo4rs::Query::new(String::from(
+                r#"
+                    MATCH (u1:User { username: $username1 })-[r:MATCHES]->(u2:User { username: $username2 })
+                    DELETE r
+            "#,
+            ))
+            .param("username1", session.username)
+            .param("username2", match_params.target),
+        )
+        .await
+        .map_err(neo4j::Error::from)
+        .map_err(http::StatusCode::from)
+        .map_err(|res| res.into_response())?;
+
+    Ok(http::StatusCode::NO_CONTENT)
 }
 
 async fn create_category(

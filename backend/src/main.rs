@@ -7,6 +7,7 @@ use axum::{
     http, middleware,
     response::{IntoResponse, Response},
 };
+use tower_http::cors::{CorsLayer, Any};
 use facet::Facet;
 use tokio::sync::Mutex;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -68,10 +69,16 @@ async fn main() -> Result<(), std::io::Error> {
             auth::protect_routes,
         ));
 
+    let cors = CorsLayer::new()
+    .allow_origin(Any)
+    .allow_methods(Any)
+    .allow_headers(Any);
+    
     let router = Router::new()
         .route("/ready", axum::routing::get(async || "ready"))
         .nest("/auth", auth::router())
         .merge(protected)
+        .layer(cors)
         .layer(middleware::from_fn(log))
         .with_state(ctx);
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
+import { authService } from "../services/authService";
 
 
 export default function Login() {
@@ -9,20 +10,33 @@ export default function Login() {
   const [usuario, setUsuario] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [error, setError] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(false);
 
-  function handleLogin(e: React.FormEvent) {
+  async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    
     if (!usuario || !password) {
       setError("Completa todos los campos");
       return;
     }
 
-    // Guarda el usuario temporalmente
-    localStorage.setItem("orbitlyUser", usuario);
+    setLoading(true);
 
-    // Navega a la pantalla principal
-    navigate("/feed");
+    try {
+      // endpoindcito
+      const response = await authService.login(usuario, password);
+      
+      sessionStorage.setItem("orbitlyUser", usuario);
+      
+      console.log("Login exitoso, token:", response.token);
+      
+      navigate("/feed");
+    } catch (err: any) {
+      setError(err.message || "Error al iniciar sesión");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -62,11 +76,12 @@ export default function Login() {
                     type="text"
                     value={usuario}
                     onChange={(e) => setUsuario(e.target.value)}
+                    disabled={loading}  
                     required
                     className="block w-full rounded-md bg-white/5 px-3 py-1.5 
                     text-base text-white outline-1 outline-white/10 
                     placeholder:text-gray-500 focus:outline-2 
-                    focus:outline-indigo-500"
+                    focus:outline-indigo-500 disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -86,11 +101,12 @@ export default function Login() {
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    disabled={loading}  
                     required
                     className="block w-full rounded-md bg-white/5 px-3 py-1.5 
                     text-base text-white outline-1 outline-white/10 
                     placeholder:text-gray-500 focus:outline-2 
-                    focus:outline-indigo-500"
+                    focus:outline-indigo-500 disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -99,12 +115,14 @@ export default function Login() {
               <div>
                 <button
                   type="submit"
+                  disabled={loading}  
                   className="flex w-full justify-center rounded-md bg-indigo-500 
                   px-3 py-1.5 text-sm font-semibold text-white 
                   hover:bg-indigo-400 focus-visible:outline-2 
-                  focus-visible:outline-indigo-500"
+                  focus-visible:outline-indigo-500 disabled:opacity-50 
+                  disabled:cursor-not-allowed"
                 >
-                  Entrar
+                  {loading ? "Cargando..." : "Entrar"}  
                 </button>
               </div>
             </form>

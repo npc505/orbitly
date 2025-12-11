@@ -23,6 +23,16 @@ El grafo está compuesto por:
 (:User)-[:MATCHES]->(:User)
 ```
 
+## Estructura del repositorio
+
+El repositorio está compuesto por:
+
+- '**backend**' Todos los archivos generados para mantener el backend
+- '**data**' Los datos utilizados para generar la estructura de datos de la red social
+- '**neo4j**' Las consultas generadas en cypher
+- '**docs**' documentos que describen el proyecto
+- '**frontend**' Archivos generados para mantener el frontend
+
 ---
 
 ## Configuración y Ejecución

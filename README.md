@@ -1,17 +1,17 @@
-# Orbitly  Sistema de Match por Gustos con Grafos (Rust + React + Neo4j)
+# Orbitly: Sistema de Match por Gustos con Grafos (Rust + React + Neo4j)
 
-Orbitly es una aplicación diseñada para conectar personas a partir de sus gustos (categorías, géneros e intereses específicos).
+Orbitly es una aplicaciÃ³n diseÃ±ada para conectar personas a partir de sus gustos (categorÃ­as, gÃ©neros e intereses especÃ­ficos).
 
 El sistema utiliza un grafo en Neo4j para modelar afinidades, permitiendo encontrar coincidencias de forma natural y eficiente.
 
 ## Modelo del Grafo
 
-El grafo está compuesto por:
+El grafo estÃ¡ compuesto por:
 
-- **User** ’ persona que usa la aplicación
-- **Interest** ’ un interés concreto (e.g., "Taylor Swift", "Star Wars", "Marvel Rivals")
-- **Category** ’ categoría general (e.g., música, películas, actividades)
-- **Genre** ’ subgénero o tipo específico dentro de una categoría
+- **User** â€™ persona que usa la aplicaciÃ³n
+- **Interest** â€™ un interÃ©s concreto (e.g., "Taylor Swift", "Star Wars", "Marvel Rivals")
+- **Category** â€™ categorÃ­a general (e.g., mÃºsica, pelÃ­culas, actividades)
+- **Genre** â€™ subgÃ©nero o tipo especÃ­fico dentro de una categorÃ­a
 
 ### Relaciones principales:
 
@@ -27,63 +27,63 @@ El grafo está compuesto por:
 
 ## Arquitectura del Proyecto
 
-Orbitly está dividido en tres capas tecnológicas:
+Orbitly estÃ¡ dividido en tres capas tecnolÃ³gicas:
 
-### 1. Backend  Rust
+### 1. Backend - Rust
 
-Rust se eligió por:
+Rust se eligiÃ³ por:
 
 - **Alto rendimiento** (compilado, sin garbage collector)
 - **Seguridad de memoria** garantizada
 - **Excelente manejo de concurrencia**
-- Ideal para servicios que requieren responder queries de grafos rápidamente
+- Ideal para servicios que requieren responder queries de grafos rÃ¡pidamente
 
 **El backend expone:**
 
-- Endpoints REST para autenticación y registro de usuarios
-- Endpoints para crear intereses, categorías y géneros
+- Endpoints REST para autenticaciÃ³n y registro de usuarios
+- Endpoints para crear intereses, categorÃ­as y gÃ©neros
 - Endpoints para registrar relaciones (likes, matches)
-- Lógica para calcular similitud entre usuarios usando cosine similarity
+- LÃ³gica para calcular similitud entre usuarios usando cosine similarity
 - Algoritmos de grafos avanzados (PageRank, Community Detection)
 
-**Stack técnico:**
+**Stack tÃ©cnico:**
 
 - **Axum**  framework web de alto rendimiento
-- **neo4rs**  driver asíncrono para Neo4j
-- **Tokio**  runtime asíncrono
-- **Serde**  serialización/deserialización JSON
+- **neo4rs**  driver asÃ­ncrono para Neo4j
+- **Tokio**  runtime asÃ­ncrono
+- **Serde**  serializaciÃ³n/deserializaciÃ³n JSON
 
-### 2. Base de Datos  Neo4j
+### 2. Base de Datos - Neo4j
 
-Neo4j es el núcleo del sistema, permitiendo:
+Neo4j es el nÃºcleo del sistema, permitiendo:
 
 - **Modelar relaciones complejas** con nodos y aristas
 - **Consultas naturalizadas de afinidad:**
-  - "Usuarios que comparten más intereses"
-  - "Intereses dentro de la misma categoría"
+  - "Usuarios que comparten mÃ¡s intereses"
+  - "Intereses dentro de la misma categorÃ­a"
   - "Subintereses conectados"
-- **Expansiones naturales** del modelo sin rediseño de tablas
-- **Algoritmos de recomendación nativos** mediante GDS (Graph Data Science)
+- **Expansiones naturales** del modelo sin rediseÃ±o de tablas
+- **Algoritmos de recomendaciÃ³n nativos** mediante GDS (Graph Data Science)
 
 **Algoritmos implementados:**
 
-- **Label Propagation**  detección de comunidades de usuarios
+- **Label Propagation**  detecciÃ³n de comunidades de usuarios
 - **PageRank**  ranking de intereses por importancia
-- **Node Similarity**  cálculo de similitud entre usuarios
+- **Node Similarity**  cÃ¡lculo de similitud entre usuarios
 - **Cosine Similarity**  scoring de compatibilidad basado en intereses compartidos
 - **Shortest Path**  distancia entre usuarios en el grafo social
 
-El diseño permite representar jerarquías de intereses y gustos con alto nivel de granularidad y flexibilidad.
+El diseÃ±o permite representar jerarquÃ­as de intereses y gustos con alto nivel de granularidad y flexibilidad.
 
-### 3. Frontend  React + TypeScript
+### 3. Frontend - React + TypeScript
 
 React + TypeScript fueron seleccionados porque:
 
-- Son el **estándar moderno** para desarrollo web
-- **TS permite tipado fuerte** y reduce errores en tiempo de ejecución
+- Son el **estÃ¡ndar moderno** para desarrollo web
+- **TS permite tipado fuerte** y reduce errores en tiempo de ejecuciÃ³n
 - React permite construir **componentes reutilizables**
-- **Render rápido** mediante virtual DOM
-- Facilita integración con librerías de visualización de grafos (e.g., react-force-graph, vis.js, d3-force)
+- **Render rÃ¡pido** mediante virtual DOM
+- Facilita integraciÃ³n con librerÃ­as de visualizaciÃ³n de grafos (e.g., react-force-graph, vis.js, d3-force)
 
 **El frontend permite:**
 
@@ -96,35 +96,35 @@ React + TypeScript fueron seleccionados porque:
 
 ## Decisiones de Modelado
 
-###  Separar Interest, Category y Genre
+###  Separar Interest, Category y Genre
 
-Esto evita mezclar niveles semánticos:
+Esto evita mezclar niveles semÃ¡nticos:
 
-- **Category** = nivel macro (ej. "Películas")
-- **Genre** = clasificación interna (ej. "Ciencia ficción")
+- **Category** = nivel macro (ej. "PelÃ­culas")
+- **Genre** = clasificaciÃ³n interna (ej. "Ciencia ficciÃ³n")
 - **Interest** = elemento puntual (ej. "Star Wars")
 
 ###  Un usuario nunca conecta directo con Category o Genre
 
-Siempre lo hace vía **Interest**, lo que:
+Siempre lo hace vÃ­a **Interest**, lo que:
 
-- Mantiene **consistencia semántica**
+- Mantiene **consistencia semÃ¡ntica**
 - Facilita **recomendaciones basadas en nodos concretos**
-- Evita conexiones irrelevantes ("likes Música" es muy amplio)
+- Evita conexiones irrelevantes ("likes MÃºsica" es muy amplio)
 
-###  Relaciones clave
+### Relaciones clave
 
-- **LIKES**  mide afinidad entre User e Interest
-- **BELONGS_TO**  clasifica cada interés
-- **HAS_GENRE**  crea filtrado temático
-- **HAS_SUBINTEREST**  permite encadenar intereses relacionados
-- **MATCHES**  conecta usuarios con match mutuo
+- **LIKES** mide afinidad entre User e Interest
+- **BELONGS_TO**  clasifica cada interÃ©s
+- **HAS_GENRE**  crea filtrado temÃ¡tico
+- **HAS_SUBINTEREST** permite encadenar intereses relacionados
+- **MATCHES**  conecta usuarios con match mutuo
 
 ---
 
 ## API Endpoints
 
-### Autenticación
+### AutenticaciÃ³n
 
 #### Registrarse
 
@@ -138,12 +138,12 @@ Content-Type: application/json
   "password": "SecurePass123",
   "first_name": "Oscar",
   "last_name": "Rodriguez",
-  "description": "Amante de la ciencia ficción y los videojuegos",
+  "description": "Amante de la ciencia ficciÃ³n y los videojuegos",
   "avatar": "https://example.com/avatar.jpg"
 }
 ```
 
-#### Iniciar sesión
+#### Iniciar sesiÃ³n
 
 ```bash
 POST /auth/signin
@@ -163,9 +163,9 @@ Content-Type: application/json
 }
 ```
 
-### Gestión de Intereses
+### GestiÃ³n de Intereses
 
-#### Crear una categoría
+#### Crear una categorÃ­a
 
 ```bash
 POST /category
@@ -178,7 +178,7 @@ Content-Type: application/json
 }
 ```
 
-#### Buscar categorías
+#### Buscar categorÃ­as
 
 ```bash
 POST /category/search
@@ -192,7 +192,7 @@ Content-Type: application/json
 }
 ```
 
-#### Crear un género
+#### Crear un gÃ©nero
 
 ```bash
 POST /genre
@@ -205,7 +205,7 @@ Content-Type: application/json
 }
 ```
 
-#### Buscar géneros
+#### Buscar gÃ©neros
 
 ```bash
 POST /genre/search
@@ -247,7 +247,7 @@ Authorization: Bearer <token>
 }
 ```
 
-#### Dar like a un interés
+#### Dar like a un interÃ©s
 
 ```bash
 POST /me/interest
@@ -261,7 +261,7 @@ Content-Type: application/json
 }
 ```
 
-#### Quitar like a un interés
+#### Quitar like a un interÃ©s
 
 ```bash
 DELETE /me/interest
@@ -313,8 +313,8 @@ Authorization: Bearer <token>
   "matches": [
     {
       "username": "maria_gamer",
-      "first_name": "María",
-      "last_name": "García",
+      "first_name": "MarÃ­a",
+      "last_name": "GarcÃ­a",
       "description": "Gamer y fan del sci-fi",
       "avatar": "https://example.com/maria.jpg",
       "compatibility": 0.85
@@ -362,9 +362,9 @@ Authorization: Bearer <token>
 }
 ```
 
-### Búsqueda de Usuarios
+### BÃºsqueda de Usuarios
 
-#### Buscar usuarios (búsqueda relajada)
+#### Buscar usuarios (bÃºsqueda relajada)
 
 ```bash
 POST /other/search
@@ -385,8 +385,8 @@ Content-Type: application/json
   "matches": [
     {
       "username": "maria_gamer",
-      "first_name": "María",
-      "last_name": "García",
+      "first_name": "MarÃ­a",
+      "last_name": "GarcÃ­a",
       "description": "Gamer y fan del sci-fi",
       "avatar": "https://example.com/maria.jpg",
       "compatibility": 0.72
@@ -395,7 +395,7 @@ Content-Type: application/json
 }
 ```
 
-#### Buscar usuarios (búsqueda estricta con fuzzy matching)
+#### Buscar usuarios (bÃºsqueda estricta con fuzzy matching)
 
 ```bash
 POST /other/search/strict
@@ -409,7 +409,7 @@ Content-Type: application/json
 }
 ```
 
-### Información de Otros Usuarios
+### InformaciÃ³n de Otros Usuarios
 
 #### Ver perfil de otro usuario
 
@@ -428,8 +428,8 @@ Content-Type: application/json
 ```json
 {
   "username": "maria_gamer",
-  "first_name": "María",
-  "last_name": "García",
+  "first_name": "MarÃ­a",
+  "last_name": "GarcÃ­a",
   "description": "Gamer y fan del sci-fi",
   "avatar": "https://example.com/maria.jpg",
   "compatibility": 0.85
@@ -460,7 +460,7 @@ Content-Type: application/json
 }
 ```
 
-### Análisis de Grafos
+### AnÃ¡lisis de Grafos
 
 #### Obtener comunidades de usuarios
 
@@ -518,7 +518,7 @@ Authorization: Bearer <token>
 }
 ```
 
-#### Encontrar camino más corto entre usuarios
+#### Encontrar camino mÃ¡s corto entre usuarios
 
 ```bash
 POST /me/shortest-path
@@ -539,7 +539,7 @@ Content-Type: application/json
 }
 ```
 
-### Información del Usuario Actual
+### InformaciÃ³n del Usuario Actual
 
 #### Ver mi perfil
 
@@ -555,7 +555,7 @@ Authorization: Bearer <token>
   "username": "oscar123",
   "first_name": "Oscar",
   "last_name": "Rodriguez",
-  "description": "Amante de la ciencia ficción y los videojuegos",
+  "description": "Amante de la ciencia ficciÃ³n y los videojuegos",
   "avatar": "https://example.com/avatar.jpg",
   "compatibility": 1.0
 }
@@ -595,7 +595,7 @@ ORDER BY score DESC
 LIMIT 30
 ```
 
-### Detección de comunidades con Label Propagation
+### DetecciÃ³n de comunidades con Label Propagation
 
 ```cypher
 MATCH (source:User)-[r:MATCHES]->(target:User)
@@ -629,7 +629,7 @@ CALL gds.graph.drop('pageRankGraph', false)
 
 ---
 
-## Configuración y Ejecución
+## ConfiguraciÃ³n y EjecuciÃ³n
 
 ### Requisitos
 
@@ -645,7 +645,7 @@ cargo build --release
 cargo run
 ```
 
-El servidor escuchará en `http://localhost:8000`
+El servidor escucharÃ¡ en `http://localhost:8000`
 
 ### Base de Datos (Neo4j)
 
@@ -653,7 +653,7 @@ El servidor escuchará en `http://localhost:8000`
 # Iniciar Neo4j
 neo4j start
 
-# Verificar que GDS esté instalado
+# Verificar que GDS estÃ© instalado
 CALL gds.list()
 ```
 
@@ -665,7 +665,7 @@ npm install
 npm run dev
 ```
 
-El frontend estará disponible en `http://localhost:5173`
+El frontend estarÃ¡ disponible en `http://localhost:5173`
 
 ---
 
@@ -682,16 +682,16 @@ JWT_SECRET=your_jwt_secret_key
 
 ---
 
-## Características Principales
+## CaracterÃ­sticas Principales
 
- **Autenticación segura** con JWT y bcrypt
+ **AutenticaciÃ³n segura** con JWT y bcrypt
  **Scoring de compatibilidad** usando cosine similarity
  **Recomendaciones colaborativas** basadas en usuarios similares
- **Detección de comunidades** con Label Propagation
+ **DetecciÃ³n de comunidades** con Label Propagation
  **Ranking de intereses** con PageRank
- **Búsqueda fuzzy** de usuarios con múltiples estrategias
- **Paginación** en todas las búsquedas
- **Caminos más cortos** entre usuarios en el grafo social
+ **BÃºsqueda fuzzy** de usuarios con mÃºltiples estrategias
+ **PaginaciÃ³n** en todas las bÃºsquedas
+ **Caminos mÃ¡s cortos** entre usuarios en el grafo social
  **Sistema de matches bidireccional**
 
 ---
@@ -702,10 +702,10 @@ Este proyecto es parte de un trabajo universitario de redes y grafos.
 
 **Equipo:**
 - Backend & Database: [Tu nombre]
-- Frontend: [Nombre del compañero de frontend]
+- Frontend: [Nombre del compaÃ±ero de frontend]
 
 ---
 
 ## Licencia
 
-Este proyecto es de código abierto bajo la licencia MIT.
+Este proyecto es de cÃ³digo abierto bajo la licencia MIT.

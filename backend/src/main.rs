@@ -53,9 +53,9 @@ async fn main() -> Result<(), std::io::Error> {
 
     let protected = Router::new()
         .route("/category", axum::routing::post(create_category))
-        .route("/category/search", axum::routing::get(search_category))
+        .route("/category/search", axum::routing::post(search_category))
         .route("/genre", axum::routing::post(create_genre))
-        .route("/genre/search", axum::routing::get(search_genre))
+        .route("/genre/search", axum::routing::post(search_genre))
         .route(
             "/me/interest",
             axum::routing::get(get_interests)
@@ -72,13 +72,13 @@ async fn main() -> Result<(), std::io::Error> {
             "/me/recommendations",
             axum::routing::get(get_contenido_recomendado),
         )
-        .route("/me/shortest-path", axum::routing::get(get_shortest_path))
+        .route("/me/shortest-path", axum::routing::post(get_shortest_path))
         .route("/me", axum::routing::get(get_me))
-        .route("/other", axum::routing::get(get_other_user))
-        .route("/other/matches", axum::routing::get(get_other_user_matches))
-        .route("/other/interest", axum::routing::get(get_other_user_interests))
-        .route("/other/search", axum::routing::get(search_users))
-        .route("/other/search/strict", axum::routing::get(search_users_strict))
+        .route("/other", axum::routing::post(get_other_user))
+        .route("/other/matches", axum::routing::post(get_other_user_matches))
+        .route("/other/interest", axum::routing::post(get_other_user_interests))
+        .route("/other/search", axum::routing::post(search_users))
+        .route("/other/search/strict", axum::routing::post(search_users_strict))
         .route("/comunidades", axum::routing::get(comunidades))
         .route("/pagerank", axum::routing::get(page_rank))
         .layer(middleware::from_fn_with_state(
@@ -468,12 +468,14 @@ async fn page_rank(
 ) -> Result<axum::Json<PageRankResponse>, Response> {
     let graph_name = format!("pageRankGraph_{}", rand::random::<u32>());
 
-    ctx.neo4j
-        .run(neo4rs::Query::new(format!(
+    let mut projection_stream = ctx.neo4j
+        .execute(neo4rs::Query::new(format!(
             r#"
-            MATCH (source:User)-[:LIKES]->(:Interest)-[r:HAS_GENRE]->(target:Genre)
-            WITH gds.graph.project('{}', source, target, {{relationshipProperties: r {{ .weight }}}}) AS g
-            RETURN g.graphName AS graph
+            CALL gds.graph.project(
+                '{}',
+                'Interest',
+                '*'
+            )
             "#,
             graph_name
         )))
@@ -481,6 +483,9 @@ async fn page_rank(
         .map_err(neo4j::Error::from)
         .map_err(http::StatusCode::from)
         .map_err(|res| res.into_response())?;
+
+    while let Some(_) = projection_stream.next().await.map_err(neo4j::Error::from).map_err(http::StatusCode::from).map_err(|res| res.into_response())? {
+    }
 
     let mut stream = ctx
         .neo4j
@@ -1008,70 +1013,7 @@ async fn get_contenido_recomendado(
     State(ctx): State<Ctx>,
     session: Session,
 ) -> Result<axum::Json<RecommendedContentResponse>, Response> {
-    let graph_name = format!("linkPred_{}", rand::random::<u32>());
-
-    ctx.neo4j
-        .run(neo4rs::Query::new(format!(
-            r#"
-            MATCH (source:Interest)<-[:LIKES]-(u:User)-[:LIKES]->(target:Interest)
-            WHERE source <> target
-            WITH gds.graph.project('{}', source, target) AS g
-            RETURN g.graphName AS graph
-            "#,
-            graph_name
-        )))
-        .await
-        .map_err(neo4j::Error::from)
-        .map_err(http::StatusCode::from)
-        .map_err(|res| res.into_response())?;
-
-    let mut link_stream = ctx
-        .neo4j
-        .execute_read(
-            neo4rs::Query::new(format!(
-                r#"
-                MATCH (u:User{{username: $username}})-[:LIKES]->(liked:Interest)
-                WITH u, COLLECT(id(liked)) AS userInterestIds
-                CALL gds.nodeSimilarity.stream('{}', {{topK: 10}})
-                YIELD node1, node2, similarity
-                WHERE node1 IN userInterestIds
-                WITH u, gds.util.asNode(node2) AS interest, similarity
-                WHERE NOT (u)-[:LIKES]->(interest)
-                RETURN
-                    interest.name AS name,
-                    interest.description AS description,
-                    interest.type AS type,
-                    AVG(similarity) AS score,
-                    'link_prediction' AS source
-                ORDER BY score DESC
-                LIMIT 20
-                "#,
-                graph_name
-            ))
-            .param("username", session.username.as_str()),
-        )
-        .await
-        .map_err(neo4j::Error::from)
-        .map_err(http::StatusCode::from)
-        .map_err(|res| res.into_response())?;
-
-    let mut link_predictions = vec![];
-    while let Some(row) = link_stream
-        .next()
-        .await
-        .map_err(neo4j::Error::from)
-        .map_err(http::StatusCode::from)
-        .map_err(|res| res.into_response())?
-    {
-        let name: String = row.get("name").unwrap_or_default();
-        let description: Option<String> = row.get("description").ok();
-        let kind: Option<String> = row.get("type").ok();
-        let score: f64 = row.get("score").unwrap_or(0.0);
-        let source: String = row.get("source").unwrap_or_default();
-        link_predictions.push(RecommendedContent { name, description, kind, score, source });
-    }
-
-    let mut collab_stream = ctx
+    let mut stream = ctx
         .neo4j
         .execute_read(
             neo4rs::Query::new(String::from(
@@ -1081,7 +1023,7 @@ async fn get_contenido_recomendado(
                 WITH DISTINCT a, i
                 RETURN i.name AS name, i.description AS description, i.type AS type, toFloat(COUNT(a)) AS score, 'collaborative' AS source
                 ORDER BY score DESC
-                LIMIT 10
+                LIMIT 30
                 "#,
             ))
             .param("username", session.username.as_str()),
@@ -1091,8 +1033,8 @@ async fn get_contenido_recomendado(
         .map_err(http::StatusCode::from)
         .map_err(|res| res.into_response())?;
 
-    let mut collab_recommendations = vec![];
-    while let Some(row) = collab_stream
+    let mut recommendations = vec![];
+    while let Some(row) = stream
         .next()
         .await
         .map_err(neo4j::Error::from)
@@ -1104,26 +1046,11 @@ async fn get_contenido_recomendado(
         let kind: Option<String> = row.get("type").ok();
         let score: f64 = row.get("score").unwrap_or(0.0);
         let source: String = row.get("source").unwrap_or_default();
-        collab_recommendations.push(RecommendedContent { name, description, kind, score, source });
+        recommendations.push(RecommendedContent { name, description, kind, score, source });
     }
 
-    let _ = ctx
-        .neo4j
-        .run(neo4rs::Query::new(format!(
-            "CALL gds.graph.drop('{}', false)",
-            graph_name
-        )))
-        .await;
-
-    let mut combined = link_predictions;
-    combined.extend(collab_recommendations);
-
-    combined.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-    combined.dedup_by(|a, b| a.name == b.name);
-    combined.truncate(30);
-
     Ok(axum::Json(RecommendedContentResponse {
-        recommendations: combined,
+        recommendations,
     }))
 }
 

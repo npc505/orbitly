@@ -1,5 +1,3 @@
-use std::ops::Not;
-
 use axum::{http::StatusCode, response::IntoResponse};
 use facet::{Facet, ScalarType};
 use facet_reflect::{HasFields, Peek};

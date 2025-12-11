@@ -137,6 +137,8 @@ async fn create_genre(State(ctx): State<Ctx>, bytes: Bytes) -> Result<http::Stat
             term: genre.name,
             label: "Genre",
             cmp_field: "name",
+            page: 0,
+            page_size: 50,
         },
     )
     .await?;
@@ -167,6 +169,10 @@ async fn create_genre(State(ctx): State<Ctx>, bytes: Bytes) -> Result<http::Stat
 #[derive(Facet, Debug, Clone, Copy)]
 struct SearchReq<'inp> {
     term: &'inp str,
+    #[facet(default)]
+    page: Option<i64>,
+    #[facet(default)]
+    page_size: Option<i64>,
 }
 
 #[derive(Facet, serde::Serialize)]
@@ -186,12 +192,14 @@ async fn search_category(
         Err((http::StatusCode::BAD_REQUEST).into_response())?;
     }
 
-    search_impl(
+    search_relaxed_impl(
         &ctx,
         SearchParams {
             term: category.term,
             label: "Category",
             cmp_field: "name",
+            page: category.page.unwrap_or(0),
+            page_size: category.page_size.unwrap_or(50),
         },
     )
     .await
@@ -209,12 +217,14 @@ async fn search_genre(
         Err((http::StatusCode::BAD_REQUEST).into_response())?;
     }
 
-    search_impl(
+    search_relaxed_impl(
         &ctx,
         SearchParams {
             term: search.term,
             label: "Genre",
             cmp_field: "name",
+            page: search.page.unwrap_or(0),
+            page_size: search.page_size.unwrap_or(50),
         },
     )
     .await
@@ -224,6 +234,8 @@ struct SearchParams<'inp> {
     term: &'inp str,
     label: &'inp str,
     cmp_field: &'inp str,
+    page: i64,
+    page_size: i64,
 }
 
 async fn search_impl<'inp>(
@@ -232,6 +244,7 @@ async fn search_impl<'inp>(
         term,
         label,
         cmp_field,
+        ..
     }: SearchParams<'inp>,
 ) -> Result<axum::Json<SearchResponse>, Response> {
     let mut stream = ctx
@@ -242,32 +255,25 @@ async fn search_impl<'inp>(
                     r#"WITH $search AS rhs
                   MATCH (t:@LABEL)
                   WITH rhs, t,
-                       // Normalize both strings for comparison
                        apoc.text.clean(toLower(rhs)) AS normalizedCandidate,
                        apoc.text.clean(toLower(t.@CMP_FIELD)) AS normalizedExisting,
-                       // Calculate phonetic similarity
                        apoc.text.phonetic(rhs) AS candidatePhonetic,
                        apoc.text.phonetic(t.@CMP_FIELD) AS existingPhonetic,
-                       // Calculate string distance
                        apoc.text.distance(toLower(rhs), toLower(t.@CMP_FIELD)) AS distance
 
                   WHERE
-                      // Case-insensitive exact match
                       toLower(rhs) = toLower(t.@CMP_FIELD)
                       OR
-                      // Normalized match (handles spaces, special chars)
                       normalizedCandidate = normalizedExisting
                       OR
-                      // Phonetic match (sounds alike)
                       candidatePhonetic = existingPhonetic
                       OR
-                      // Very close string distance (handles typos like p0p vs pop)
                       (distance <= 2 AND distance > 0)
 
-                  RETURN 
-                      CASE 
-                          WHEN count(t) > 0 THEN false 
-                          ELSE true 
+                  RETURN
+                      CASE
+                          WHEN count(t) > 0 THEN false
+                          ELSE true
                       END AS shouldCreateTag,
                       collect(DISTINCT t.@CMP_FIELD) AS existingAliases,
                       count(t) AS aliasCount,
@@ -298,6 +304,59 @@ async fn search_impl<'inp>(
     } else {
         Ok(axum::Json(SearchResponse { name: vec![] }))
     }
+}
+
+async fn search_relaxed_impl<'inp>(
+    ctx: &Ctx,
+    SearchParams {
+        term,
+        label,
+        cmp_field,
+        page,
+        page_size,
+    }: SearchParams<'inp>,
+) -> Result<axum::Json<SearchResponse>, Response> {
+    let skip = page * page_size;
+
+    let mut stream = ctx
+        .neo4j
+        .execute(
+            neo4rs::Query::new(
+                String::from(
+                    r#"
+                    MATCH (t:@LABEL)
+                    WHERE toLower(t.@CMP_FIELD) CONTAINS toLower($search)
+                    RETURN t.@CMP_FIELD AS name
+                    SKIP $skip
+                    LIMIT $limit
+                    "#,
+                )
+                .replace("@LABEL", label)
+                .replace("@CMP_FIELD", cmp_field),
+            )
+            .param("search", term)
+            .param("skip", skip)
+            .param("limit", page_size),
+        )
+        .await
+        .map_err(neo4j::Error::from)
+        .map_err(http::StatusCode::from)
+        .map_err(|res| res.into_response())?;
+
+    let mut names = vec![];
+    while let Some(row) = stream
+        .next()
+        .await
+        .map_err(neo4j::Error::from)
+        .map_err(http::StatusCode::from)
+        .map_err(|res| res.into_response())?
+    {
+        if let Ok(name) = row.get::<String>("name") {
+            names.push(name);
+        }
+    }
+
+    Ok(axum::Json(SearchResponse { name: names }))
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -714,6 +773,10 @@ async fn search_users(
         Err((http::StatusCode::BAD_REQUEST).into_response())?;
     }
 
+    let page = search.page.unwrap_or(0);
+    let page_size = search.page_size.unwrap_or(50);
+    let skip = page * page_size;
+
     let mut stream = ctx
         .neo4j
         .execute(
@@ -735,11 +798,14 @@ async fn search_users(
                     other.avatar as avatar,
                     compatibility
                 ORDER BY compatibility DESC
-                LIMIT 50
+                SKIP $skip
+                LIMIT $limit
                 "#,
             ))
             .param("current_username", session.username)
-            .param("term", search.term),
+            .param("term", search.term)
+            .param("skip", skip)
+            .param("limit", page_size),
         )
         .await
         .map_err(neo4j::Error::from)
@@ -782,6 +848,8 @@ async fn search_users_strict(
             term: search.term,
             label: "User",
             cmp_field: "username",
+            page: 0,
+            page_size: 50,
         },
     )
     .await
@@ -922,7 +990,13 @@ async fn get_shortest_path(
 #[derive(serde::Serialize)]
 struct RecommendedContent {
     name: String,
-    count: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(rename = "type")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kind: Option<String>,
+    score: f64,
+    source: String,
 }
 
 #[derive(serde::Serialize)]
@@ -934,30 +1008,55 @@ async fn get_contenido_recomendado(
     State(ctx): State<Ctx>,
     session: Session,
 ) -> Result<axum::Json<RecommendedContentResponse>, Response> {
-    let mut stream = ctx
+    let graph_name = format!("linkPred_{}", rand::random::<u32>());
+
+    ctx.neo4j
+        .run(neo4rs::Query::new(format!(
+            r#"
+            MATCH (source:Interest)<-[:LIKES]-(u:User)-[:LIKES]->(target:Interest)
+            WHERE source <> target
+            WITH gds.graph.project('{}', source, target) AS g
+            RETURN g.graphName AS graph
+            "#,
+            graph_name
+        )))
+        .await
+        .map_err(neo4j::Error::from)
+        .map_err(http::StatusCode::from)
+        .map_err(|res| res.into_response())?;
+
+    let mut link_stream = ctx
         .neo4j
         .execute_read(
-            neo4rs::Query::new(String::from(
+            neo4rs::Query::new(format!(
                 r#"
-                MATCH (u:User{username: $username})-[:LIKES]->(:Interest)<-[:LIKES]-(a:User)-[:LIKES]->(i:Interest)
-                WHERE NOT (u)-[:LIKES]->(i)
-                WITH DISTINCT a, i
-                RETURN i.name AS name, COUNT(a) AS user_count
-                ORDER BY user_count DESC
+                MATCH (u:User{{username: $username}})-[:LIKES]->(liked:Interest)
+                WITH u, COLLECT(id(liked)) AS userInterestIds
+                CALL gds.nodeSimilarity.stream('{}', {{topK: 10}})
+                YIELD node1, node2, similarity
+                WHERE node1 IN userInterestIds
+                WITH u, gds.util.asNode(node2) AS interest, similarity
+                WHERE NOT (u)-[:LIKES]->(interest)
+                RETURN
+                    interest.name AS name,
+                    interest.description AS description,
+                    interest.type AS type,
+                    AVG(similarity) AS score,
+                    'link_prediction' AS source
+                ORDER BY score DESC
+                LIMIT 20
                 "#,
+                graph_name
             ))
-            .param("username", session.username),
+            .param("username", session.username.as_str()),
         )
         .await
         .map_err(neo4j::Error::from)
         .map_err(http::StatusCode::from)
         .map_err(|res| res.into_response())?;
 
-    let mut result = RecommendedContentResponse {
-        recommendations: vec![],
-    };
-
-    while let Some(row) = stream
+    let mut link_predictions = vec![];
+    while let Some(row) = link_stream
         .next()
         .await
         .map_err(neo4j::Error::from)
@@ -965,13 +1064,67 @@ async fn get_contenido_recomendado(
         .map_err(|res| res.into_response())?
     {
         let name: String = row.get("name").unwrap_or_default();
-        let count: i64 = row.get("user_count").unwrap_or_default();
-        result
-            .recommendations
-            .push(RecommendedContent { name, count });
+        let description: Option<String> = row.get("description").ok();
+        let kind: Option<String> = row.get("type").ok();
+        let score: f64 = row.get("score").unwrap_or(0.0);
+        let source: String = row.get("source").unwrap_or_default();
+        link_predictions.push(RecommendedContent { name, description, kind, score, source });
     }
 
-    Ok(axum::Json(result))
+    let mut collab_stream = ctx
+        .neo4j
+        .execute_read(
+            neo4rs::Query::new(String::from(
+                r#"
+                MATCH (u:User{username: $username})-[:LIKES]->(:Interest)<-[:LIKES]-(a:User)-[:LIKES]->(i:Interest)
+                WHERE NOT (u)-[:LIKES]->(i)
+                WITH DISTINCT a, i
+                RETURN i.name AS name, i.description AS description, i.type AS type, toFloat(COUNT(a)) AS score, 'collaborative' AS source
+                ORDER BY score DESC
+                LIMIT 10
+                "#,
+            ))
+            .param("username", session.username.as_str()),
+        )
+        .await
+        .map_err(neo4j::Error::from)
+        .map_err(http::StatusCode::from)
+        .map_err(|res| res.into_response())?;
+
+    let mut collab_recommendations = vec![];
+    while let Some(row) = collab_stream
+        .next()
+        .await
+        .map_err(neo4j::Error::from)
+        .map_err(http::StatusCode::from)
+        .map_err(|res| res.into_response())?
+    {
+        let name: String = row.get("name").unwrap_or_default();
+        let description: Option<String> = row.get("description").ok();
+        let kind: Option<String> = row.get("type").ok();
+        let score: f64 = row.get("score").unwrap_or(0.0);
+        let source: String = row.get("source").unwrap_or_default();
+        collab_recommendations.push(RecommendedContent { name, description, kind, score, source });
+    }
+
+    let _ = ctx
+        .neo4j
+        .run(neo4rs::Query::new(format!(
+            "CALL gds.graph.drop('{}', false)",
+            graph_name
+        )))
+        .await;
+
+    let mut combined = link_predictions;
+    combined.extend(collab_recommendations);
+
+    combined.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    combined.dedup_by(|a, b| a.name == b.name);
+    combined.truncate(30);
+
+    Ok(axum::Json(RecommendedContentResponse {
+        recommendations: combined,
+    }))
 }
 
 async fn get_lv2_matches(
@@ -1112,6 +1265,8 @@ async fn create_category(
             term: category.name,
             label: "Category",
             cmp_field: "name",
+            page: 0,
+            page_size: 50,
         },
     )
     .await?;
